@@ -453,3 +453,15 @@ User:
 Assistant action: validate and commit the CSRF token reuse fix, regression tests, README guidance and accumulated prompt transcript, then push main to origin. Real environment files remain excluded. The final response will confirm the commit and remote verification.
 
 File actions: updated prompts.md to record this request. No environment files were read or changed.
+
+Result: commit c8df40b was pushed to origin/main and the worktree was clean.
+
+## 22. Rename transcript and prepare automation branch
+
+User:
+
+> update the prompts.md file to be called app_prompts.md, then commit, then create a new branch for azure automation and checkout to it
+
+Assistant actions: rename the repository transcript to app_prompts.md, update current links in README.md and Copilot instructions, commit on main, then create and check out azure-automation. Historical references to prompts.md remain unchanged to preserve the conversation.
+
+File actions: renamed prompts.md to app_prompts.md and updated README.md and .github/copilot-instructions.md. No environment files were accessed or changed. This request does not include pushing or implementing Azure automation.

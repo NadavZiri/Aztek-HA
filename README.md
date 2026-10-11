@@ -122,4 +122,4 @@ Build with `npm run build`. Set `NODE_ENV=production`, an HTTPS `APP_ORIGIN`, se
 
 ## Session records and Copilot
 
-[prompts.md](prompts.md) records the session conversation and file-change summaries, excluding secrets. [.github/copilot-instructions.md](.github/copilot-instructions.md) describes repository conventions. [.vscode/mcp.json](.vscode/mcp.json) configures Playwright MCP; start/approve it in VS Code for browser interactions.
+[app_prompts.md](app_prompts.md) records the session conversation and file-change summaries, excluding secrets. [.github/copilot-instructions.md](.github/copilot-instructions.md) describes repository conventions. [.vscode/mcp.json](.vscode/mcp.json) configures Playwright MCP; start/approve it in VS Code for browser interactions.

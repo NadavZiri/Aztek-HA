@@ -39,7 +39,7 @@ Atmosphere is a React/TypeScript weather app with an Express backend and Prisma/
 
 ## Repository-specific conventions
 
-- Maintain [prompts.md](../prompts.md) with the user's prompts, clarification selections and assistant answers throughout this session. Explicitly notify the user whenever files are added, changed or deleted; redact secrets from the transcript.
+- Maintain [app_prompts.md](../app_prompts.md) with the user's prompts, clarification selections and assistant answers throughout this session. Explicitly notify the user whenever files are added, changed or deleted; redact secrets from the transcript.
 - The existing [.gitignore](../.gitignore) excludes `.env` and `.env.*`, but permits `.env.example`. Use example files for placeholders and ignored environment files for real configuration.
 - [.vscode/mcp.json](../.vscode/mcp.json) configures the Playwright MCP server for browser interactions through VS Code. It runs via `npx -y @playwright/mcp@latest` and requires Node.js 18 or newer. Start/approve it through VS Code's MCP controls; this configuration is not an application test runner.
 - Backend configuration is loaded from `server/.env` because npm workspace scripts run in that directory. The root `.env` supplies Docker Compose only. Browser origin must match `APP_ORIGIN` exactly for mutations.
