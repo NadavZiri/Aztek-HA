@@ -1,0 +1,74 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id           String            @id @default(uuid()) @db.Uuid
+  email        String            @unique
+  passwordHash String
+  createdAt    DateTime          @default(now())
+  sessions     Session[]
+  drafts       WeatherDraft[]
+  snapshots    WeatherSnapshot[]
+}
+
+model Session {
+  id            String         @id @default(uuid()) @db.Uuid
+  userId        String         @db.Uuid
+  user          User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt     DateTime       @default(now())
+  expiresAt     DateTime
+  revokedAt     DateTime?
+  refreshTokens RefreshToken[]
+  drafts        WeatherDraft[]
+
+  @@index([userId])
+}
+
+model RefreshToken {
+  id         String    @id @default(uuid()) @db.Uuid
+  hash       String    @unique
+  sessionId  String    @db.Uuid
+  session    Session   @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  createdAt  DateTime  @default(now())
+  consumedAt DateTime?
+
+  @@index([sessionId])
+}
+
+model WeatherDraft {
+  id            String   @id @default(uuid()) @db.Uuid
+  userId        String   @db.Uuid
+  user          User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  sessionId     String   @db.Uuid
+  session       Session  @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  citySelection Json     @db.JsonB
+  current       Json     @db.JsonB
+  forecast      Json     @db.JsonB
+  units         String   @default("metric")
+  fetchedAt     DateTime
+  expiresAt     DateTime
+
+  @@index([expiresAt])
+  @@index([userId])
+}
+
+model WeatherSnapshot {
+  id            String   @id @default(uuid()) @db.Uuid
+  sourceDraftId String   @unique @db.Uuid
+  userId        String   @db.Uuid
+  user          User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  citySelection Json     @db.JsonB
+  current       Json     @db.JsonB
+  forecast      Json     @db.JsonB
+  units         String   @default("metric")
+  fetchedAt     DateTime
+  savedAt       DateTime @default(now())
+
+  @@index([userId, savedAt, id])
+}
