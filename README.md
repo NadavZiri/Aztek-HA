@@ -92,6 +92,8 @@ Access JWTs last 15 minutes and are algorithm/issuer/audience/session validated.
 
 Cookies are HttpOnly, SameSite=Lax, scoped to `/`, and Secure in production. Access JWTs never go in localStorage. Protected routes check session revocation in PostgreSQL, so logout invalidates outstanding access JWTs. Mutation routes require a signed CSRF cookie/header pair and the configured Origin. Auth and weather endpoints are IP-rate-limited. There is no password reset or email verification in this version.
 
+CSRF tokens are reused while their signed cookie remains valid, so opening another tab does not invalidate an existing page's token. A `CSRF_INVALID` response means the cookie/header is missing, stale or invalid: refresh the page and ensure cookies are enabled. `ORIGIN_INVALID` means the browser address does not match `APP_ORIGIN`; use the configured address or update the setting and restart Express.
+
 ## API
 
 All API responses disable caching. Errors have `{ "error": { "code": "...", "message": "..." } }`.

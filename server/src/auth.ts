@@ -30,6 +30,12 @@ export function createAuth(db: PrismaClient, config: Config) {
   const cookie: CookieOptions = { httpOnly: true, secure: config.NODE_ENV === "production", sameSite: "lax", path: "/" };
   const signature = (value: string) => createHmac("sha256", config.JWT_SECRET).update(value).digest("base64url");
   let dummyHash: Promise<string> | undefined;
+  function validCsrf(raw: unknown): raw is string {
+    if (typeof raw !== "string") return false;
+    const parts = raw.split(".");
+    return parts.length === 2 && /^[A-Za-z0-9_-]{43}$/.test(parts[0])
+      && /^[A-Za-z0-9_-]{43}$/.test(parts[1]) && equal(signature(parts[0]), parts[1]);
+  }
 
   function clear(res: Response) {
     res.clearCookie(ACCESS, cookie);
@@ -46,11 +52,10 @@ export function createAuth(db: PrismaClient, config: Config) {
     if (req.method === "GET" || req.method === "HEAD" || req.method === "OPTIONS") return next();
     const header = req.get("X-CSRF-Token");
     const raw: unknown = req.cookies[CSRF];
-    if (req.get("Origin") !== config.APP_ORIGIN || typeof raw !== "string" || !header || !equal(raw, header)) {
-      throw new AppError(403, "CSRF_INVALID", "Refresh the page and try again.");
+    if (req.get("Origin") !== config.APP_ORIGIN) {
+      throw new AppError(403, "ORIGIN_INVALID", `Open the app at ${config.APP_ORIGIN}, or ask the administrator to correct APP_ORIGIN.`);
     }
-    const [value, signed] = raw.split(".");
-    if (!value || !signed || !equal(signature(value), signed)) {
+    if (!validCsrf(raw) || !header || !equal(raw, header)) {
       throw new AppError(403, "CSRF_INVALID", "Refresh the page and try again.");
     }
     next();
@@ -76,7 +81,12 @@ export function createAuth(db: PrismaClient, config: Config) {
     next();
   };
   const router = Router();
-  router.get("/csrf", (_req, res) => {
+  router.get("/csrf", (req, res) => {
+    const existing: unknown = req.cookies[CSRF];
+    if (validCsrf(existing)) {
+      res.json({ csrfToken: existing });
+      return;
+    }
     const value = token();
     const signed = `${value}.${signature(value)}`;
     res.cookie(CSRF, signed, { ...cookie, maxAge: SESSION_MS });

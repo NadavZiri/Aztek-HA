@@ -297,3 +297,159 @@ Assistant:
 File actions: updated root and server .env.example comments and this prompt log. No real API key was added.
 
 Commit/push intent: commit the weather application, tests, documentation and configuration to main with a Copilot co-author trailer, then push to origin/main. Actual success will be confirmed in the assistant's final response after Git verification.
+
+Commit/push result: commit 749c9f8 was pushed to origin/main; the remote commit matched the local commit and the worktree was clean. No real environment files or API keys were committed.
+
+## 14. JWT secret setup
+
+User:
+
+> what should I do in the jwt
+
+Assistant:
+
+> For JWT_SECRET in server/.env, use a long, randomly generated secret - not your password or OpenWeather API key.
+>
+> Run this in PowerShell:
+>
+> node -e "console.log(require('node:crypto').randomBytes(48).toString('hex'))"
+>
+> Copy the output into JWT_SECRET in the environment file. Keep it private and stable. The backend uses it to sign and verify login tokens; changing it invalidates existing access tokens. Restart the backend after updating it.
+>
+> I'll record this guidance in the prompt log without reading or recording your secret.
+
+File actions: updated prompts.md only. Did not read or modify server/.env, generate a secret, or commit/push this log update.
+
+## 15. PostgreSQL password setup
+
+User:
+
+> should i replace postgres_password with a chosen password?
+
+Assistant answer:
+
+> Yes - replace the placeholder value, not the POSTGRES_PASSWORD variable name. Copy the root .env.example to .env and set POSTGRES_PASSWORD to a strong password there. Use the same password in the PostgreSQL DATABASE_URL in server/.env, URL-encoding special characters in that URL. Leave .env.example as a placeholder template.
+>
+> This initializes the password for a new Compose database. If the database volume already exists, changing POSTGRES_PASSWORD does not change the existing database user's password.
+
+File actions: updated prompts.md only; no environment files or passwords were read or changed.
+
+## 16. Database authentication error
+
+User:
+
+> PrismaClientInitializationError: Authentication failed against database server, the provided database credentials for `weather` are not valid.
+
+Assistant asked whether the Docker database existed before changing its password or whether another PostgreSQL installation was in use. No answer was provided before the next request.
+
+## 17. Freeing database port
+
+User:
+
+> how can I clear my 5432 port
+
+Assistant:
+
+> I'll check what is listening on port 5432 first. That will tell us whether to stop a Docker container or a local PostgreSQL service without deleting database data.
+
+Inspection found a local postgres listener on port 5432, PID 8348, and no Docker container publishing that port. Assistant offered using port 5433, stopping the existing process, or instructions only, warning that stopping it interrupts connected applications but does not delete data.
+
+User selected: "Stop the PostgreSQL process using port 5432".
+
+Result: attempted to stop the verified postgres PID 8348, but Windows denied access. The process was not stopped. Administrator privileges are required.
+
+Assistant guidance: open PowerShell as Administrator, recheck the process listening on port 5432, and stop PID 8348 only if it is still the postgres listener. Verify that no TCP listener remains, then start this app's database with docker compose up -d db. Existing database files must not be deleted to free a port.
+
+File actions: updated prompts.md only. No database files or environment configuration were changed.
+
+## 18. Registration returning 403
+
+User:
+
+> im getting 403 when trying to create an account
+
+Assistant:
+
+> I'll trace the registration request and CSRF checks to find why it returns 403. I'll check the browser origin against the configured app origin without reading your secrets.
+
+User confirmed the browser address is http://localhost:5173 and the error message is "Refresh the page and try again."
+
+Inspection: non-secret backend configuration matches that origin and development mode. Once the app was running, browser probes with deliberately invalid credentials passed CSRF with a fresh token and reached input validation (400), without creating accounts.
+
+Assistant:
+
+> The origin matches, and a fresh CSRF token passes the registration checks. I reproduced a token issue, though: requesting a token again replaces the cookie and invalidates the previously loaded token. Another tab can therefore trigger the same 403.
+>
+> I'll make valid CSRF tokens reusable across page loads, add regression tests, and give origin mismatches a clearer error. The security checks will remain in place.
+
+Before the fix, two consecutive CSRF fetches produced different tokens; submitting the first returned CSRF_INVALID (403). After the fix the token stayed stable and submitting the first reached input validation (400), demonstrating that CSRF passed. The original user's precise trigger was not independently observed.
+
+File actions: updated server/src/auth.ts, README.md and prompts.md; added server/tests/csrf.test.ts. No secrets or user credentials were read or logged, and no accounts were created by the browser probes. Changes have not been committed or pushed.
+
+Validation: six focused CSRF/client retry tests passed; TypeScript and ESLint passed; VS Code reported no errors. Browser verification against the running app confirmed stable tokens across loads and successful CSRF checks.
+
+Assistant completion:
+
+> Fixed a CSRF-token issue that could cause this 403: opening another page replaced the cookie and invalidated the first page's token. Valid tokens are now reused, with origin and signature checks retained.
+>
+> Refresh http://localhost:5173 and try creating your account again. If the backend is not running in watch mode, restart npm run dev first.
+>
+> Updated authentication code, regression tests, README.md and prompts.md. Six focused tests, typecheck and lint passed. No account was created during verification; changes are not yet committed.
+
+## 19. Missing database tables (P2021)
+
+User:
+
+> [api] Request failed: PrismaClientKnownRequestError P2021
+
+Assistant:
+
+> P2021 means Prisma tried to access a table that doesn't exist. I'll check whether the app's database migrations have been applied.
+
+Migration status confirmed that 202610110001_initial had not been applied to the configured weather database.
+
+Assistant:
+
+> The initial migration is pending in your weather database. I'll apply the committed migration to create the missing tables, then verify the schema. This won't reset or delete the database.
+
+Actions: ran npm run db:migrate against the configured local database. The migration applied successfully, Prisma reported the schema up to date, SQL inspection confirmed User, Session, RefreshToken, WeatherDraft and WeatherSnapshot tables, and API health returned status ok. No database reset, deletion or account creation was performed.
+
+Assistant completion:
+
+> Fixed: the initial database migration hadn't been applied, so the tables were missing. I ran npm run db:migrate and verified all five app tables exist, Prisma reports the schema up to date, and API database health is OK. Try creating your account again at http://localhost:5173.
+>
+> Updated prompts.md only; the database schema was created without resetting or deleting data.
+
+File actions: updated prompts.md only. Existing uncommitted CSRF changes were preserved.
+
+## 20. Live API integration test
+
+User:
+
+> test the api integration
+
+Assistant:
+
+> I'll test live OpenWeather calls through the app's backend, including city search and both weather endpoints. I'll keep your API key out of the output and report any provider errors.
+
+Results: live Direct Geocoding, Current Weather and five-day forecast calls all returned HTTP 200 using the configured key. London, GB returned four geocoding matches and 40 three-hour forecast intervals. Shared runtime schemas validated real responses, including current cod 200 and forecast cod "200".
+
+An end-to-end HTTP check through the running Vite proxy and Express backend used a uniquely named temporary account: CSRF acquisition, registration, city lookup, live weather draft creation, snapshot save, repeated idempotent save, detail/list reads, deletion and logout all passed. Displayed current/forecast JSON exactly matched saved JSON; fetchedAt was preserved. The temporary account and its associated records were removed after testing. No existing user records were changed.
+
+File actions: updated prompts.md only. No API keys, passwords or session tokens were printed or recorded; no application/configuration changes were made. Tests used six live OpenWeather requests total (three direct provider checks and three through Express).
+
+Assistant completion:
+
+> Live API integration passed. All three OpenWeather endpoints returned 200, and the forecast contained 40 three-hour intervals. The authenticated backend flow also passed: registration, city lookup, live weather fetch, exact snapshot save/read/list/delete and logout. Repeated saves were idempotent, and saved JSON matched the displayed data.
+>
+> Removed the temporary test account and its records. Updated prompts.md only; your API key was not exposed. Changes have not been committed or pushed.
+
+## 21. Commit and push fixes
+
+User:
+
+> commit and push
+
+Assistant action: validate and commit the CSRF token reuse fix, regression tests, README guidance and accumulated prompt transcript, then push main to origin. Real environment files remain excluded. The final response will confirm the commit and remote verification.
+
+File actions: updated prompts.md to record this request. No environment files were read or changed.
