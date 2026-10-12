@@ -1,0 +1,54 @@
+name: Release immutable application image
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+  id-token: write
+concurrency:
+  group: azure-production
+  cancel-in-progress: false
+jobs:
+  validate:
+    uses: ./.github/workflows/ci.yml
+    permissions:
+      contents: read
+  release:
+    needs: validate
+    runs-on: ubuntu-latest
+    environment: azure-production
+    env:
+      ACTIVE_REGION: ${{ vars.ACTIVE_REGION }}
+      RESOURCE_GROUP: ${{ vars.AZURE_RESOURCE_GROUP }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: azure/login@v2
+        with:
+          client-id: ${{ vars.AZURE_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+      - name: Build and release
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          if ($env:ACTIVE_REGION -ne 'primary') { throw 'Rebuild regional topology before releasing after recovery.' }
+          $o = az deployment group show -g $env:RESOURCE_GROUP -n weather-apps --query properties.outputs -o json | ConvertFrom-Json
+          if ($LASTEXITCODE -ne 0) { throw 'Deployment outputs unavailable' }
+          az acr login -n $o.registryName.value
+          if ($LASTEXITCODE -ne 0) { throw 'Registry login failed' }
+          $tag = "$($o.registryHost.value)/weather:$env:GITHUB_SHA"
+          docker build -t $tag .
+          if ($LASTEXITCODE -ne 0) { throw 'Build failed' }
+          docker push $tag
+          if ($LASTEXITCODE -ne 0) { throw 'Push failed' }
+          az acr login -n $o.backupRegistryName.value
+          if ($LASTEXITCODE -ne 0) { throw 'Backup registry login failed' }
+          $backupTag = "$($o.backupRegistryHost.value)/weather:$env:GITHUB_SHA"
+          docker tag $tag $backupTag
+          if ($LASTEXITCODE -ne 0) { throw 'Backup tag failed' }
+          docker push $backupTag
+          if ($LASTEXITCODE -ne 0) { throw 'Backup push failed' }
+          $digest = az acr repository show -n $o.registryName.value --image "weather:$env:GITHUB_SHA" --query digest -o tsv
+          if ($LASTEXITCODE -ne 0) { throw 'Digest lookup failed' }
+          $backupDigest = az acr repository show -n $o.backupRegistryName.value --image "weather:$env:GITHUB_SHA" --query digest -o tsv
+          if ($LASTEXITCODE -ne 0 -or $backupDigest -ne $digest) { throw 'Backup digest mismatch or lookup failure' }
+          ./scripts/azure-release.ps1 -ResourceGroup $env:RESOURCE_GROUP -Image "$($o.registryHost.value)/weather@$digest" -BackupImage "$($o.backupRegistryHost.value)/weather@$digest"

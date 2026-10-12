@@ -1,0 +1,56 @@
+name: Preview or provision European Azure environment
+on:
+  workflow_dispatch:
+    inputs:
+      apply:
+        description: Create paid resources after reviewing preview and complete quote
+        type: boolean
+        default: false
+      cost_approved:
+        description: Full monthly quote, regional capacity and quota reviewed
+        type: boolean
+        default: false
+      database_zone_ha:
+        description: Add optional paid primary database zone HA
+        type: boolean
+        default: false
+permissions:
+  contents: read
+  id-token: write
+concurrency:
+  group: azure-production
+  cancel-in-progress: false
+jobs:
+  validate:
+    uses: ./.github/workflows/ci.yml
+    permissions:
+      contents: read
+  provision:
+    needs: validate
+    runs-on: ubuntu-latest
+    environment: azure-production
+    env:
+      ACTIVE_REGION: ${{ vars.ACTIVE_REGION }}
+      AZURE_DATABASE_PASSWORD: ${{ secrets.AZURE_DATABASE_PASSWORD }}
+      AZURE_APP_DATABASE_PASSWORD: ${{ secrets.AZURE_APP_DATABASE_PASSWORD }}
+      AZURE_JWT_SECRET: ${{ secrets.AZURE_JWT_SECRET }}
+      AZURE_OPENWEATHER_KEY: ${{ secrets.AZURE_OPENWEATHER_KEY }}
+      AZURE_ORIGIN_SECRET: ${{ secrets.AZURE_ORIGIN_SECRET }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: azure/login@v2
+        with:
+          client-id: ${{ vars.AZURE_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+      - name: Validate, preview and optionally apply
+        shell: pwsh
+        env:
+          APPLY: ${{ inputs.apply }}
+          COST_APPROVED: ${{ inputs.cost_approved }}
+          ZONE_HA: ${{ inputs.database_zone_ha }}
+          SUBSCRIPTION: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+          RESOURCE_GROUP: ${{ vars.AZURE_RESOURCE_GROUP }}
+          PREFIX: ${{ vars.AZURE_PREFIX }}
+        run: |
+          ./scripts/azure-provision.ps1 -SubscriptionId $env:SUBSCRIPTION -ResourceGroup $env:RESOURCE_GROUP -Prefix $env:PREFIX -Apply:($env:APPLY -eq 'true') -CostApproved:($env:COST_APPROVED -eq 'true') -ZoneHa:($env:ZONE_HA -eq 'true')

@@ -1,0 +1,36 @@
+name: Controlled forced regional recovery
+on:
+  workflow_dispatch:
+    inputs:
+      incident:
+        description: Incident/change reference
+        required: true
+        type: string
+      accept_data_loss:
+        description: Accept possible lost accounts/snapshots and forced sign-in
+        type: boolean
+        default: false
+permissions:
+  contents: read
+  id-token: write
+concurrency:
+  group: azure-production
+  cancel-in-progress: false
+jobs:
+  recover:
+    runs-on: ubuntu-latest
+    environment: azure-recovery
+    env:
+      ACTIVE_REGION: ${{ vars.ACTIVE_REGION }}
+      RESOURCE_GROUP: ${{ vars.AZURE_RESOURCE_GROUP }}
+      INCIDENT: ${{ inputs.incident }}
+      ACCEPT_LOSS: ${{ inputs.accept_data_loss }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: azure/login@v2
+        with:
+          client-id: ${{ vars.AZURE_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+      - shell: pwsh
+        run: ./scripts/azure-recover.ps1 -ResourceGroup $env:RESOURCE_GROUP -Incident $env:INCIDENT -AcceptDataLoss:($env:ACCEPT_LOSS -eq 'true')

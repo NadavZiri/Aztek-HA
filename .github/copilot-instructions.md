@@ -9,6 +9,7 @@ Atmosphere is a React/TypeScript weather app with an Express backend and Prisma/
 - Validate: `npm run typecheck`, `npm run lint`, `npm test`.
 - Single file: `npm test -- shared/src/index.test.ts`; single named test: `npm test -- server/tests/auth.test.ts -t "stores distinct"`.
 - Real PostgreSQL tests: set `TEST_DATABASE_URL` to a separate migrated database, then `npm run test:integration`. Normal `npm test` skips database tests when that variable is absent.
+- Deployment checks: `npm run test:container` builds/test-cleans unique isolated Docker resources; `pwsh -File scripts/azure-automation-test.ps1` tests mocked Azure control-plane commands. On Windows, Windows PowerShell also runs the script. Compile templates with `az bicep build --file infra/main.bicep`; no Azure sign-in is needed for compilation.
 - Node requirements follow root package.json; use npm workspaces and the committed root lockfile. Prisma CLI is a root devDependency so npm applies the patched `deepmerge-ts` override to its config dependency.
 
 ## Architecture
@@ -44,3 +45,14 @@ Atmosphere is a React/TypeScript weather app with an Express backend and Prisma/
 - [.vscode/mcp.json](../.vscode/mcp.json) configures the Playwright MCP server for browser interactions through VS Code. It runs via `npx -y @playwright/mcp@latest` and requires Node.js 18 or newer. Start/approve it through VS Code's MCP controls; this configuration is not an application test runner.
 - Backend configuration is loaded from `server/.env` because npm workspace scripts run in that directory. The root `.env` supplies Docker Compose only. Browser origin must match `APP_ORIGIN` exactly for mutations.
 - The client serializes refresh attempts within a tab and independently bounds authentication/CSRF retries. Concurrent cross-tab refresh reuse fails closed by revoking the session.
+
+## European deployment
+
+- See [azure_plan.md](../azure_plan.md) before changing deployment topology or cost assumptions. Bicep targets Sweden Central and North Europe; Front Door may cache public content worldwide, never private APIs.
+- The Docker working directory is `/app/server`; server build bundles both `index` and `cleanup`. Migration jobs run `server/scripts/migrate.mjs` with an admin URL; the application uses the restricted `weather_app` SQL role. Do not run migrations in every app replica.
+- Production rate limits are PostgreSQL-backed and fail closed on database errors. Keep bucket updates atomic across instances and cleanup disabled on standby.
+- App role and database writability are separate gates. Standby must not authenticate/read private data from a lagging replica. Container Apps probes `/health/live` to keep the warm instance running; Front Door probes `/health/ready` and the backup origin remains disabled until promotion.
+- Deployment workflows use GitHub environment OIDC, digest-identical images mirrored to separate European registries, concurrency locks and explicit cost/recovery approvals. Do not store real credentials in parameter files or logs.
+- Recovery disables the old origin, fences the old app/cleanup and verifies the old database is stopped before forced promotion. It revokes sessions on the promoted database before activating traffic. If fencing cannot be verified, abort rather than weaken the gate.
+- Recovery persists a resource-group `weatherWriterState` tag before promotion; original provisioning/releases check it as well as repository `ACTIVE_REGION`. After recovery set `ACTIVE_REGION=backup`. Failback requires rebuilding a replica from the new writer and updating topology, never re-enabling the divergent old database.
+- Origin isolation needs both Container Apps ingress source ranges and Front Door instance/header validation. External workload-profile environments cannot use a subnet NSG as their public-ingress boundary. Refresh service-tag ranges and verify real proxy/client IP behavior before launch.

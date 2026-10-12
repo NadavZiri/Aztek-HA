@@ -8,6 +8,7 @@ import { AppError } from "../src/errors";
 import { city, current, forecast } from "../../shared/src/fixtures";
 import { snapshotListSchema, weatherSchema, userSchema } from "@weather/shared";
 import type { Config } from "../src/config";
+import { DatabaseRateLimitStore } from "../src/rate-limit";
 
 const databaseUrl = process.env.TEST_DATABASE_URL;
 describe.skipIf(!databaseUrl)("PostgreSQL-backed app", () => {
@@ -35,6 +36,24 @@ describe.skipIf(!databaseUrl)("PostgreSQL-backed app", () => {
   afterAll(async () => {
     await db.user.deleteMany({ where: { id: { in: userIds } } });
     await db.$disconnect();
+  });
+  it("shares atomic rate limits across app replicas and expires buckets", async () => {
+    const prefix = `test-${randomUUID()}`;
+    const first = new DatabaseRateLimitStore(db, prefix);
+    const second = new DatabaseRateLimitStore(db, prefix);
+    const key = randomUUID();
+    try {
+      const counts = await Promise.all(Array.from({ length: 12 }, (_, i) => (i % 2 ? first : second).increment(key)));
+      expect(counts.map(value => value.totalHits).sort((a, b) => a - b)).toEqual(Array.from({ length: 12 }, (_, i) => i + 1));
+      await first.decrement(key);
+      expect((await second.increment(key)).totalHits).toBe(12);
+      await db.rateLimitBucket.updateMany({ where: { id: { startsWith: prefix } }, data: { resetAt: new Date(0) } });
+      expect((await second.increment(key)).totalHits).toBe(1);
+      await first.resetKey(key);
+      expect((await second.increment(key)).totalHits).toBe(1);
+    } finally {
+      await db.rateLimitBucket.deleteMany({ where: { id: { startsWith: prefix } } });
+    }
   });
   it("registers, persists exact JSONB snapshots, isolates owners, paginates and deletes", async () => {
     const owner = await account();

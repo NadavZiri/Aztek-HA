@@ -50,11 +50,12 @@ Run from the repository root:
 | `npm test -- shared/src/index.test.ts` | Run one test file |
 | `npm test -- server/tests/auth.test.ts -t "stores distinct"` | Run a single named test |
 | `npm run test:integration` | Run real PostgreSQL tests; requires `TEST_DATABASE_URL` |
+| `npm run test:container` | Build Linux image and test isolated PostgreSQL/auth/standby/recovery; requires Docker |
 | `npm run build` | Bundle backend and build frontend |
 | `npm start` | Start the built backend; production mode serves the built frontend |
 | `npm run db:generate` | Generate Prisma Client |
 | `npm run db:migrate` | Apply committed migrations |
-| `npm run db:cleanup` | Delete expired weather drafts in batches |
+| `npm run db:cleanup` | Delete expired weather drafts and rate-limit buckets |
 
 For integration tests use a **separate migrated database**, not your production database. Tests create uniquely named users and remove only their own records:
 
@@ -118,7 +119,32 @@ Schedule `npm run db:cleanup` to remove expired drafts; weather fetches also per
 
 ## Production run
 
-Build with `npm run build`. Set `NODE_ENV=production`, an HTTPS `APP_ORIGIN`, server secrets and `DATABASE_URL`, then run `npm start`. The built backend serves frontend assets, binds to loopback, and expects a same-origin HTTPS reverse proxy. Trust-proxy settings are deliberately not guessed: configure an exact trusted proxy topology before deployment so IP rate limiting uses the intended client address. Deployment is outside this version's scope.
+Production public assets include cache headers suitable for Front Door: hashed bundles are immutable for one year; HTML revalidates in browsers with a 60-second shared-cache TTL; unversioned files cache for five minutes. Missing bundles return uncached 404s. `/api/*` remains `no-store`. Front Door caching/compression still requires infrastructure configuration; these origin headers alone do not deploy it. See [azure_plan.md](azure_plan.md) for the confirmed European hosting design and remaining deployment prerequisites.
+
+Build with `npm run build`. Set `NODE_ENV=production`, an HTTPS `APP_ORIGIN`, server secrets and `DATABASE_URL`, then run `npm start`. The built backend serves frontend assets and defaults to loopback. Containers set `BIND_HOST=0.0.0.0`. Configure `TRUST_PROXY_HOPS` for the exact reverse-proxy topology; the supplied Azure topology uses two hops (Front Door and Container Apps). Validate the effective client IP in Azure before launch.
+
+Production IP rate limits use atomic PostgreSQL buckets shared by all app replicas; development/tests use the in-memory store. Apply **both** committed migrations before running the new server. Hourly cleanup removes expired buckets and drafts only in the active region.
+
+## Azure deployment automation
+
+The [deployment decision record and runbook](azure_plan.md) covers Sweden Central primary, North Europe warm backup, cost assumptions, GitHub OIDC setup and controlled recovery.
+
+- [Dockerfile](Dockerfile) builds one non-root Linux image containing the frontend, backend and migration tooling.
+- [Bicep entry point](infra/main.bicep) creates European private PostgreSQL primary/replica, regional Container Apps environments, Key Vaults and mirrored Basic registries, and Front Door Standard static caching/compression.
+- [.github/workflows](.github/workflows) provides CI, manually approved preview/provision, immutable releases and explicitly acknowledged forced recovery. Provision/release run CI first.
+- Health probes: `/health/live` is process-only; `/health/ready` requires the active role, writable database and required tables. Container Apps uses liveness for its own readiness to keep standby instances running; Front Door uses write readiness. The backup origin is disabled until controlled recovery.
+- Origins allow only current `AzureFrontDoor.Backend` IPv4 ranges at Container Apps ingress and validate the specific Front Door ID plus an overwritten origin secret. Header validation alone is not the network boundary. API routes have no Front Door cache configuration.
+
+Run local deployment validation with Docker running:
+
+```powershell
+npm run test:container
+.\scripts\azure-automation-test.ps1
+```
+
+The first command builds the image and creates/removes uniquely named isolated containers/network, using no real API key. It verifies migrations, runtime SQL privileges, authentication, static/API headers, standby gating, recovery session invalidation, read-only rejection and database outage/reconnection. The second mocks Azure commands to test approval/fencing/order guards; it does not provision resources.
+
+**Not deployed:** subscription authentication, quota/capacity, complete costs, ARM what-if, effective proxy IPs, edge cache hits and real regional fault drills still need Azure validation. Do not treat local tests or Bicep compilation as proof that a live deployment will succeed.
 
 ## Session records and Copilot
 

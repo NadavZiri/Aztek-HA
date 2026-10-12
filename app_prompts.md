@@ -465,3 +465,99 @@ User:
 Assistant actions: rename the repository transcript to app_prompts.md, update current links in README.md and Copilot instructions, commit on main, then create and check out azure-automation. Historical references to prompts.md remain unchanged to preserve the conversation.
 
 File actions: renamed prompts.md to app_prompts.md and updated README.md and .github/copilot-instructions.md. No environment files were accessed or changed. This request does not include pushing or implementing Azure automation.
+
+## 23. Azure planning and static caching
+
+User requested European deployment with worldwide low latency and minimal cost, then clarified that the assignment should emulate reliable worldwide usage. The user requested a cost-attractive European primary and European backup, allowed global caching of public assets, selected warm standby with controlled promotion, and requested azure_plan.md.
+
+Assistant compared the confirmed Standard_D2ds_v5 PostgreSQL SKU: Sweden Central EUR240.32/month, North Europe EUR254.33/month, West Europe EUR272.44/month per 2-vCPU server. These are compute-only estimates at 730 hours/month.
+
+User asked: "explain what HA means. Also, do you recommend a different approach to the API writes?"
+
+Assistant explained redundant same-region instances versus asynchronous regional recovery, recommended one authoritative writer, and preserved drafts for exact snapshot saving. The user expressed uncertainty about cost/reliability, then confirmed the balanced baseline: Sweden primary and Irish replica, optional primary database HA, approximately EUR494.65/month database compute before other charges.
+
+User asked: "Anything else we can use front door for to cut costs?"
+
+Assistant recommended static cache headers, compression, safe query keys, avoiding duplicate delivery products and measuring cache/egress costs. The user selected: "Static caching/compression first; preserve authenticated weather flow (Recommended)".
+
+After approval, assistant implemented public static caching and published azure_plan.md. Added server/src/static.ts and server/tests/static.test.ts; updated server/src/app.ts, README.md and this transcript. No Azure resources have been provisioned. Subscription, public hostname and complete cost remain deployment prerequisites.
+
+Validation: four static-cache tests, TypeScript, ESLint and production build passed. Private APIs remain no-store. Asked whether to prepare infrastructure only or connect to Azure for read-only checks; the user was unavailable, so no account connection or resource provisioning was attempted.
+
+Completion: origin caching is implemented, not Front Door deployment or edge compression. Infrastructure automation remains pending target subscription/network validation and full-cost confirmation. No changes were committed or pushed.
+
+## 24. Continuing Azure deployment preparation
+
+User directed the assistant to continue autonomously rather than stop with actionable preparation remaining. The retained conversation context records that direction as a summary, not an exact quotation.
+
+Assistant progress:
+
+> I'm continuing the deployment preparation with a shared database-backed rate limiter, container health checks, and deployment/recovery automation. I'll validate these locally; creating paid Azure resources still requires subscription access and approval of the full cost estimate.
+
+> The first Linux container build exposed missing native-package entries in the Windows-generated dependency lockfile. I'm repairing that before proceeding. The recovery workflow will also refuse promotion unless the old database is verifiably stopped, rather than risk two writable databases.
+
+> Local validation has passed for the container build, authentication, shared rate limits, standby behavior, and database outage/reconnection. The Bicep templates also compile. I've added mocked tests for the recovery safety gates and am documenting the Azure setup prerequisites and cloud checks that remain unverified.
+
+File actions:
+
+- Added Dockerfile and .dockerignore for a non-root Linux image, excluding real environment files.
+- Added infra/main.bicep, network.bicep, region.bicep and edge.bicep: Swedish primary, Irish standby, private PostgreSQL primary/replica, optional database zone HA, zone-redundant Container Apps environments, regional Key Vaults/managed identities and separate Basic registries, Front Door Standard routes/cache/compression.
+- Added GitHub workflows for CI, protected OIDC preview/provision, immutable mirrored releases and controlled forced recovery.
+- Added PowerShell provision/release/recovery scripts and mocked automation tests; added isolated container validation/smoke scripts.
+- Added server/scripts/migrate.mjs for controlled migrations, restricted runtime SQL-role provisioning and recovery session invalidation.
+- Added static cache helper/tests, database write-readiness, hosting tests, PostgreSQL-backed rate-limit store and a second Prisma migration.
+- Updated server middleware/config/startup/cleanup, Prisma schema/integration tests, example server environment, workspace build/test scripts, dependency manifest/lockfile, README.md, .github/copilot-instructions.md, azure_plan.md and this transcript.
+- No existing source files were deleted. Temporary lock-repair files and compiled validation output were cleaned up; uniquely named test containers/network and their ephemeral data were removed.
+
+Implementation details:
+
+- Production replicas share atomic rate-limit buckets in the authoritative DB. Standby never serves private APIs or runs cleanup; Front Door does not automatically route writes to the unpromoted replica.
+- Origin protection uses Container Apps ingress IPv4 source restrictions plus specific Front Door ID/overwritten secret validation, not header checks alone.
+- The same image digest is mirrored to independent European registries so backup scaling does not require the failed region's registry.
+- Recovery persists a cloud writer-state marker, fences the primary, verifies it is stopped, promotes the replica, revokes all sessions/removes transient drafts, activates backup and verifies write readiness. Failed fencing cannot trigger promotion. Original-topology releases are blocked by both cloud and GitHub state.
+- Failback is an explicitly documented replica-rebuild/planned-switchover runbook, not automatic reuse of divergent old data.
+- Repaired missing Linux native lock entries and aligned esbuild with Vite's supported peer range. Mock tests exposed and fixed PowerShell argument-forwarding and reserved-variable bugs. Container tests exposed dynamic host-port reassignment on restart; the runner now rediscovers ports.
+
+Validation:
+
+- 31 unit/UI/hosting/static tests passed; all 6 real PostgreSQL integration tests passed separately against an isolated database.
+- TypeScript, ESLint, production build and Bicep compilation passed. Workflow YAML/approval gates and PowerShell script syntax/behavior were checked.
+- Container tests passed for idempotent migrations, non-administrative runtime role, non-root UID, origin denial, immutable static headers, private API no-store, registration/session/logout, standby refusal, forced session invalidation, read-only DB rejection and outage/reconnection.
+- Mocked automation tests passed for cost/data-loss gates, non-mutating preview and temporary secret-file cleanup, command argument forwarding, failed fences, ordered migrations/recovery and post-recovery cloud-state guards.
+- npm audit reported zero advisories. No live OpenWeather requests were made for these deployment tests.
+
+Environment actions: stopped the repository's development API watcher/process to release the Windows Prisma DLL for client generation; its development supervisor stopped the frontend too. Docker Desktop and the existing user database remain running; unrelated containers were not modified. Restart local development after applying migrations with npm run db:migrate, then npm run dev.
+
+Cloud blocker: Azure tools returned an authentication failure; Azure CLI is not installed and no authenticated subscription is available. No Azure what-if, quota/capacity validation, complete cost approval, real edge/cache validation or regional cloud drill was possible. These are explicitly unverified, not reported as completed. No paid resources were created, and these Azure changes were not committed or pushed.
+
+Assistant completion summary:
+
+> Prepared Azure deployment automation on azure-automation: European primary/standby infrastructure, Front Door static caching/compression, container hosting, shared rate limits, OIDC workflows and fenced recovery. Local tests/builds and Bicep compilation passed. Updated README.md, Copilot instructions, azure_plan.md and app_prompts.md. Actual deployment remains blocked by missing Azure authentication/subscription configuration and full-cost approval; no resources were provisioned or changes pushed.
+
+## 25. Setting up deployment secrets
+
+User:
+
+> How should I setup the secrets?
+
+Assistant answer: create the GitHub environment azure-production under repository Settings > Environments, configure its protection rules, and add five environment secrets with the exact workflow names: AZURE_DATABASE_PASSWORD (database administrator), AZURE_APP_DATABASE_PASSWORD (different restricted runtime-role password), AZURE_JWT_SECRET (random signing secret), AZURE_OPENWEATHER_KEY (real provider key), and AZURE_ORIGIN_SECRET (random Front Door-to-origin secret). Generate each password/JWT/origin value independently with Node crypto randomBytes(48).toString('hex'), run locally and paste directly into GitHub, never chat or Git.
+
+The provision workflow securely passes these inputs into Bicep and creates regional Key Vault secrets. The app resolves them using managed identity. The Front Door origin header uses AZURE_ORIGIN_SECRET automatically; do not replace the originSecret parameter in edge.bicep with a literal. FRONT_DOOR_ID and database URLs are generated by deployment.
+
+Configure AZURE_CLIENT_ID, AZURE_TENANT_ID, AZURE_SUBSCRIPTION_ID, AZURE_RESOURCE_GROUP, AZURE_PREFIX and ACTIVE_REGION=primary as repository Actions variables. Client/tenant/subscription IDs are not secret credentials; Azure Login uses separately configured OIDC federation, not a client secret. Create the protected azure-recovery environment too; its workflow needs OIDC authorization but does not require copies of these five provisioning secrets. See azure_plan.md for identity/federation/RBAC setup. Do not rotate existing secrets casually: database credentials, JWT sessions and origin authentication require coordinated deployment updates.
+
+File actions: updated app_prompts.md only with this question and answer. No real secrets were generated, read, stored or changed; no Azure/GitHub configuration was modified.
+
+## 26. Commit and push Azure automation
+
+User:
+
+> commit and push
+
+Assistant:
+
+> I'll check the pending changes for accidental secrets, update the prompt log, then commit and push azure-automation.
+
+File actions: updated this transcript and included the prepared deployment infrastructure, container/runtime changes, workflows, tests and documentation in the commit. Checked 37 pending files for common credential patterns without displaying values; real environment files remain ignored. Previously verified local tests/builds and Bicep compilation are recorded above; this request makes no new deployment or cloud configuration changes.
+
+Commit/push: create a commit with the Copilot co-author trailer and push azure-automation to origin, setting its upstream. Verify the remote commit matches the local commit and the worktree is clean; report the actual result after execution.

@@ -1,0 +1,39 @@
+name: Validate application and infrastructure
+on:
+  push:
+  pull_request:
+  workflow_call:
+permissions:
+  contents: read
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_USER: weather
+          POSTGRES_PASSWORD: isolated-ci-password
+          POSTGRES_DB: weather_test
+        ports: ['5432:5432']
+        options: --health-cmd pg_isready --health-interval 10s --health-timeout 5s --health-retries 5
+    env:
+      DATABASE_URL: postgresql://weather:isolated-ci-password@localhost:5432/weather_test
+      TEST_DATABASE_URL: postgresql://weather:isolated-ci-password@localhost:5432/weather_test
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - run: npm run db:generate
+      - run: npm run db:migrate
+      - run: npm run typecheck
+      - run: npm run lint
+      - run: npm test
+      - run: npm run build
+      - run: az bicep build --file infra/main.bicep
+      - shell: pwsh
+        run: ./scripts/azure-automation-test.ps1
+      - run: npm run test:container
